@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+.env
+.venv/
+venv/
+
+# Node.js (se usares para frontend)
+node_modules/
+dist/
+
+# Docker
+*.pid
+*.db
+*.sock
+
+# VSCode
+.vscode/
+
+# Outros
+.DS_Store
+*.swp
+*.bak
