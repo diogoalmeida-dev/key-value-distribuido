@@ -22,6 +22,12 @@ Sistema distribuído de armazenamento key-value com API REST, tolerância a falh
 - docker compose ps ## Ver o estado dos serviços
 
 
+## Links
+- http://localhost:8000/docs  -> Swagger UI interactivo
+- http://localhost:8000/openapi.json -> OpenAPI spec em JSON
+- 
+
+
 ## ⚙️ Instalação e Execução
 ```bash
 chmod +x start.sh
