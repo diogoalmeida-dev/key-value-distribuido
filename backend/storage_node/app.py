@@ -26,3 +26,9 @@ def get_kv(key: str):
 @app.delete("/store", status_code=204)
 def del_kv(key: str):
     STORE.pop(key, None)
+    
+
+@app.get("/store/all", summary="Listar todas as keys guardadas")
+def list_all_keys():
+    return {"keys": list(STORE.keys())}
+
