@@ -35,3 +35,11 @@ async def delete_item(key: str):
         r = await client.delete(f"{NODE_URL}/store", params={"key": key})
     if r.status_code != 204:
         raise HTTPException(r.status_code, r.text)
+    
+@app.get("/store/all", summary="Listar todas as keys guardadas (via Gateway)")
+async def list_all_keys_gateway():
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{NODE_URL}/store/all")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.text)
+    return r.json()
