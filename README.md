@@ -23,7 +23,8 @@ Sistema distribuído de armazenamento key-value com API REST, tolerância a falh
 
 
 ## Links
-- http://localhost:8000/docs  -> Swagger UI interactivo
+- http://localhost:8000/docs  -> Swagger UI interactivo (API GATEWAY IMPLEMENTA PUT/GET/DELETE)
+- http://localhost:8100/docs  -> Swagger UI interactivo (STORAGE_NODE IMPLEMENTA PUT KV/GET KV/DELETE KV/ GET ALL KEYS)
 - http://localhost:8000/openapi.json -> OpenAPI spec em JSON
 - 
 
