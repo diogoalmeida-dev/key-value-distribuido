@@ -21,7 +21,7 @@ services:
     ports:
       - "8100:8000"
     volumes:
-      - ./storage_data:/data    # <— bind mount para a pasta local ./storage_data
+      - ./storage_data:/data
     depends_on:
       - redis
 
