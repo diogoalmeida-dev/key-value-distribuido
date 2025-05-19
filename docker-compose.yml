@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  gateway:
+    build: ./backend/api_gateway
+    environment:
+      - NODE_URL=http://node1:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - node1
+
+  node1:
+    build: ./backend/storage_node
+    ports:
+      - "8100:8000"
