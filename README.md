@@ -15,6 +15,13 @@ Sistema distribuído de armazenamento key-value com API REST, tolerância a falh
 - Linux (ou WSL no Windows)
 - Bash
 
+## Comandos
+- Open docker desktop
+- docker compose build ## Build docker image, executa as instruções de cada dockerfile
+- docker compose up -d  ## Arrancar os serviços
+- docker compose ps ## Ver o estado dos serviços
+
+
 ## ⚙️ Instalação e Execução
 ```bash
 chmod +x start.sh
