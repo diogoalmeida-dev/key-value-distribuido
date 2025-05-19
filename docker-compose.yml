@@ -1,11 +1,8 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: redis
     ports:
       - "6379:6379"
-    # Persistência em disco (snapshot a cada 60s se houver ≥1 alteração, e AOF)
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
 
   gateway:
     build: ./backend/api_gateway
@@ -18,16 +15,14 @@ services:
 
   node1:
     build: ./backend/storage_node
-    container_name: storage_node
     environment:
       - REDIS_URL=redis://redis:6379/0
       - SQLITE_FILE=/data/db.sqlite3
     ports:
       - "8100:8000"
     volumes:
-      - storage_data:/data
+      - ./storage_data:/data    # <— bind mount para a pasta local ./storage_data
     depends_on:
       - redis
 
-volumes:
-  storage_data: {}
+volumes: {}
