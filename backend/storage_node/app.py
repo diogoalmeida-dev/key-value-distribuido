@@ -4,6 +4,9 @@ import os
 import redis
 from sqlalchemy import create_engine, Table, Column, String, MetaData, select
 
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+
 # Pydantic models
 class KVRequest(BaseModel):
     data: dict = Field(
@@ -84,13 +87,14 @@ def health():
     "/store",
     tags=["store"],
     summary="Armazenar um par chave-valor",
-    description="Grava o par chave-valor no SQLite e atualiza a cache Redis.",
+    description="Grava o par chave-valor no SQLite (sem tocar na cache).",
     response_model=StatusResponse,
     status_code=201
 )
 def put_kv(item: KVRequest):
     """
-    Armazena o valor recebido associado à chave.
+    Armazena o valor recebido associado à chave no SQLite,
+    sem escrever imediatamente na cache Redis.
     """
     key = item.data["key"]
     value = item.data["value"]
@@ -100,9 +104,8 @@ def put_kv(item: KVRequest):
             kv_table.insert().values(key=key, value=value)
             .prefix_with("OR REPLACE")
         )
-    # Atualizar cache
-    redis_client.setex(key, CACHE_TTL, value)
     return {"status": "stored"}
+
 
 @app.get(
     "/store",
@@ -122,7 +125,12 @@ def get_kv(key: str):
     # Tentar cache
     value = redis_client.get(key)
     if value is not None:
-        return {"data": {"value": value}}
+        # devolve também o campo `message`, que o Swagger vai mostrar
+        return JSONResponse(
+            status_code=200,
+            content={"data": {"value": value}, "message": f"⚡ Cache hit para a chave '{key}'"}
+        )
+
     # Cache miss: buscar no SQLite
     with engine.connect() as conn:
         row = conn.execute(
@@ -130,6 +138,7 @@ def get_kv(key: str):
         ).first()
     if not row:
         raise HTTPException(404, "Key not found")
+
     value = row[0]
     # Popula a cache
     redis_client.setex(key, CACHE_TTL, value)
