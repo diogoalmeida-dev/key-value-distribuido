@@ -4,6 +4,15 @@ services:
     ports:
       - "6379:6379"
 
+  cockroachdb:
+    image: cockroachdb/cockroach:v23.1.5
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    volumes:
+      - ./cockroach-data:/cockroach-data
+
   gateway:
     build: ./backend/api_gateway
     environment:
@@ -17,12 +26,16 @@ services:
     build: ./backend/storage_node
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SQLITE_FILE=/data/db.sqlite3
+      - CACHE_TTL=300
+      - COCKROACH_URL=cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
     ports:
       - "8100:8000"
     volumes:
       - ./storage_data:/data
     depends_on:
       - redis
+      - cockroachdb
 
-volumes: {}
+volumes:
+  cockroach-data:
+  storage_data:
