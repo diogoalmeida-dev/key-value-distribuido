@@ -65,19 +65,14 @@ async def _publish_raw(payload: dict[str, Any]) -> None:
             mandatory=True,  # erro imediato se não houver rota/fila
         )
 
-
-async def publish_cmd(cmd: str, key: str, value: str | None = None) -> None:
-    """
-    Publica um comando `put` ou `del` com carimbo temporal ISO-8601 UTC.
-    """
-    payload: dict[str, Any] = {
-        "cmd": cmd,  # "put" | "del"
+async def publish_cmd(cmd: str, key: str, value: str | None = None):
+    payload = {
+        "cmd": cmd,               # "put"  | "del"
         "key": key,
-        "value": value,
+        "value": value,           # só nos PUTs
         "ts": datetime.now(timezone.utc).isoformat(),
     }
-    await _publish_raw(payload)
-
+    await _publish_raw(payload)   # _publish_raw = tua função que faz o publish
 
 # ────────────────────────────────
 #  Modelos Pydantic

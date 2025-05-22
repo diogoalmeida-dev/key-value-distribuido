@@ -1,181 +1,128 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-import os
-import time
-import redis
-from sqlalchemy import create_engine, Table, Column, String, MetaData, select
+from datetime import datetime, timezone
+import os, time, redis
+from sqlalchemy import (
+    create_engine, Table, Column, String, MetaData, select, text
+)
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.dialects.postgresql import insert
 
-# ——————————————————————————————
-# 1) Configurações de ambiente (uma só vez)
-# ——————————————————————————————
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))
+# ───────────────────────────── ENV ──────────────────────────────
+REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CACHE_TTL   = int(os.getenv("CACHE_TTL", "300"))
 COCKROACH_URL = os.getenv(
     "COCKROACH_URL",
-    "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
+    "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable",
 )
 
-# ——————————————————————————————
-# 2) Inicialização de clientes e engine
-# ——————————————————————————————
+# ───────────────────────── REDIS / SQL ─────────────────────────
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-
-engine = create_engine(
-    COCKROACH_URL,
-    connect_args={"sslmode": "disable"}
-)
+engine = create_engine(COCKROACH_URL, connect_args={"sslmode": "disable"})
 
 metadata = MetaData()
 kv_table = Table(
     "kv_store", metadata,
     Column("key", String, primary_key=True),
     Column("value", String, nullable=False),
-    Column("updated_at", String, nullable=False)  # ISO string ou TIMESTAMP
+    Column("updated_at", String, nullable=False,
+           server_default=text("'1970-01-01T00:00:00Z'"))  # fallback
 )
 
-# ——————————————————————————————
-# 3) Retry loop para a BD
-# ——————————————————————————————
-max_retries = 10
-for attempt in range(1, max_retries + 1):
+# ─────────────────────── Retry à BD ────────────────────────────
+for attempt in range(1, 11):
     try:
         with engine.connect():
-            print(f"[node1] Ligação ao CockroachDB no intento {attempt} bem-sucedida")
+            print(f"[node1] CockroachDB OK na tentativa {attempt}")
             break
     except OperationalError:
-        print(f"[node1] CockroachDB não disponível ({attempt}/{max_retries}), a aguardar 2s…")
+        print(f"[node1] BD indisponível ({attempt}/10)… a dormir 2 s")
         time.sleep(2)
 else:
-    raise RuntimeError("Falha ao ligar ao CockroachDB após vários intentos")
+    raise RuntimeError("CockroachDB nunca respondeu")
 
-# ——————————————————————————————
-# 4) Instância FastAPI
-# ——————————————————————————————
-app = FastAPI(
-    title="Storage Node com Redis e CockroachDB",
-    version="0.1.0",
-    description="Cache-aside com Redis e CockroachDB",
-)
+# ─────────────────────── FASTAPI APP ───────────────────────────
+app = FastAPI(title="Storage Node")
 
-# ——————————————————————————————
-# 5) Criar o schema no startup
-# ——————————————————————————————
+# 2️⃣  –––––––––  Retry & schema só no startup  –––––––––
 @app.on_event("startup")
-def on_startup():
+def startup():
+    """Liga ao Cockroach com retry e cria a tabela se faltar."""
+    for attempt in range(1, 11):
+        try:
+            with engine.connect():
+                print(f"[node1] CockroachDB OK na tentativa {attempt}")
+                break
+        except OperationalError:
+            print(f"[node1] BD indisponível ({attempt}/10)… a dormir 2 s")
+            time.sleep(2)
+    else:
+        raise RuntimeError("CockroachDB nunca respondeu")
+
     metadata.create_all(engine)
-    print("[node1] Tabelas criadas ou confirmadas no CockroachDB")
+    print("[node1] Tabela kv_store pronta")
 
-# ——————————————————————————————
-# 6) Modelos Pydantic
-# ——————————————————————————————
+# ─────────────── MODELOS Pydantic ────────────────
 class KVRequest(BaseModel):
-    data: dict = Field(
-        ...,
-        example={"key": "username", "value": "alice"},
-        description="Dicionário com a chave e o valor a armazenar"
-    )
-
-class StatusResponse(BaseModel):
-    status: str = Field(..., example="stored", description="Estado da operação")
+    data: dict = Field(..., example={"key": "user", "value": "alice"})
 
 class KVResponse(BaseModel):
-    data: dict = Field(
-        ...,
-        example={"value": "alice"},
-        description="Dicionário com o valor associado à chave"
-    )
+    data: dict
 
 class KeysResponse(BaseModel):
-    keys: list[str] = Field(
-        ...,
-        example=["username", "email"],
-        description="Lista de todas as chaves armazenadas"
-    )
+    keys: list[str]
 
-# ——————————————————————————————
-# 7) Endpoints
-# ——————————————————————————————
-@app.get("/health", response_model=dict[str, str])
-def health():
-    return {"status": "ok"}
+class StatusResponse(BaseModel):
+    status: str
 
-@app.put(
-    "/store",
-    tags=["store"],
-    summary="Armazenar um par chave-valor",
-    description="Upsert no CockroachDB com conflito tratado no SQL.",
-    response_model=StatusResponse,
-    status_code=201
-)
+# ─────────────── ENDPOINTS ────────────────
+@app.put("/store", response_model=StatusResponse, status_code=201)
 def put_kv(item: KVRequest):
-    key = item.data["key"]
-    value = item.data["value"]
+    key, value = item.data["key"], item.data["value"]
+    ts = datetime.now(timezone.utc).isoformat()
 
-    stmt = insert(kv_table).values(key=key, value=value)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["key"],
-        set_={"value": stmt.excluded.value}
-    )
+    stmt = (insert(kv_table)
+            .values(key=key, value=value, updated_at=ts)
+            .on_conflict_do_update(
+                index_elements=["key"],
+                set_={"value": value, "updated_at": ts}
+            ))
+
     with engine.begin() as conn:
         conn.execute(stmt)
+
+    redis_client.delete(key)          # invalida cache
     return {"status": "stored"}
 
-@app.get(
-    "/store",
-    tags=["store"],
-    summary="Obter valor por chave",
-    description="Cache-aside: tenta Redis e, em cache miss, CockroachDB.",
-    response_model=KVResponse,
-    responses={404: {"description": "Chave não encontrada"}, 503: {"description": "Serviço indisponível"}}
-)
+@app.get("/store", response_model=KVResponse)
 def get_kv(key: str):
-    # 1) Cache
-    val = redis_client.get(key)
-    if val is not None:
+    if (val := redis_client.get(key)) is not None:
         return JSONResponse(
-            status_code=200,
-            content={"data": {"value": val}, "message": f"⚡ Cache hit para '{key}'"}
+            content={"data": {"value": val}, "message": "⚡ cache hit"}
         )
 
-    # 2) DB
     try:
         with engine.connect() as conn:
-            row = conn.execute(
-                select(kv_table.c.value).where(kv_table.c.key == key)
-            ).first()
+            row = conn.execute(select(kv_table.c.value)
+                               .where(kv_table.c.key == key)).first()
     except OperationalError:
-        raise HTTPException(503, "Serviço de armazenamento indisponível")
+        raise HTTPException(503, "DB indisponível")
 
     if not row:
         raise HTTPException(404, "Key not found")
 
-    # 3) Popula cache
-    redis_client.setex(key, CACHE_TTL, row[0])
-    return {"data": {"value": row[0]}}
+    redis_client.setex(key, CACHE_TTL, row.value)
+    return {"data": {"value": row.value}}
 
-@app.delete(
-    "/store",
-    tags=["store"],
-    summary="Eliminar valor por chave",
-    description="Remove do CockroachDB e da cache Redis.",
-    status_code=204
-)
-def del_kv(key: str):
+@app.delete("/store", status_code=204)
+def delete_kv(key: str):
     with engine.begin() as conn:
         conn.execute(kv_table.delete().where(kv_table.c.key == key))
     redis_client.delete(key)
 
-@app.get(
-    "/store/all",
-    tags=["store"],
-    summary="Listar todas as chaves guardadas",
-    description="Devolve lista de todas as chaves armazenadas.",
-    response_model=KeysResponse
-)
-def list_all_keys():
+@app.get("/store/all", response_model=KeysResponse)
+def list_keys():
     with engine.connect() as conn:
-        keys = [row[0] for row in conn.execute(select(kv_table.c.key))]
+        keys = [r.key for r in conn.execute(select(kv_table.c.key))]
     return {"keys": keys}
