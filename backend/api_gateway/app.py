@@ -5,6 +5,7 @@ import json
 import httpx
 import aio_pika
 from aio_pika import Message, DeliveryMode
+from datetime import datetime, timezone
 
 # ——————————————————————————————
 # Configurações de ambiente
@@ -17,6 +18,9 @@ NODE_URL = os.getenv("NODE_URL", "http://node1:8000")
 # Função para publicar na fila
 # ——————————————————————————————
 async def publish_kv(data: dict):
+    # acrescenta timestamp em ISO 8601 (UTC)
+    data["ts"] = datetime.now(timezone.utc).isoformat()
+
     conn = await aio_pika.connect_robust(RABBITMQ_URL)
     async with conn:
         ch = await conn.channel()
@@ -26,6 +30,7 @@ async def publish_kv(data: dict):
             delivery_mode=DeliveryMode.PERSISTENT
         )
         await ch.default_exchange.publish(msg, routing_key=QUEUE_NAME)
+
 
 # ——————————————————————————————
 # Modelos Pydantic
