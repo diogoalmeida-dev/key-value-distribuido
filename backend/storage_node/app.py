@@ -6,6 +6,7 @@ import time
 import redis
 from sqlalchemy import create_engine, Table, Column, String, MetaData, select
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.dialects.postgresql import insert
 
 # Pydantic models
 class KVRequest(BaseModel):
@@ -83,14 +84,22 @@ app = FastAPI(
 def health():
     return {"status": "ok"}
 
-@app.put("/store", response_model=StatusResponse, status_code=201)
+@app.put("/store", tags=["store"], summary="Armazenar um par chave-valor",
+         description="Grava o par chave-valor no CockroachDB (sem tocar na cache).",
+         response_model=StatusResponse, status_code=201)
 def put_kv(item: KVRequest):
-    key, value = item.data["key"], item.data["value"]
+    key = item.data["key"]
+    value = item.data["value"]
+
+    stmt = insert(kv_table).values(key=key, value=value)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["key"],
+        set_={"value": stmt.excluded.value}
+    )
+
     with engine.begin() as conn:
-        conn.execute(
-            kv_table.insert().values(key=key, value=value)
-            .prefix_with("ON CONFLICT (key) DO UPDATE")
-        )
+        conn.execute(stmt)
+
     return {"status": "stored"}
 
 @app.get("/store", response_model=KVResponse)
