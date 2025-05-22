@@ -4,13 +4,16 @@ FROM python:3.12-slim
 # 2) Define o directório de trabalho dentro do container
 WORKDIR /app
 
-# 3) Copia o ficheiro de dependências primeiro …
-COPY requirements.txt .
+# 3) Instala as dependências de sistema para psycopg2
+RUN apt-get update && \
+    apt-get install -y libpq-dev gcc && \
+    rm -rf /var/lib/apt/lists/*
 
-# 4) … instala as dependências (mantém a camada de cache pequena)
+# 4) Copia o ficheiro de dependências e instala-as
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5) Copia o código-fonte do serviço para a imagem
+# 5) Copia o código-fonte do serviço
 COPY app.py .
 
 # 6) Garante que o output de logs aparece logo no terminal
