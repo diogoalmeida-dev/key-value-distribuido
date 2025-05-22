@@ -13,17 +13,10 @@ services:
     volumes:
       - ./cockroach-data:/cockroach-data
 
-  gateway:
-    build: ./backend/api_gateway
-    environment:
-      - NODE_URL=http://node1:8000
-    ports:
-      - "8000:8000"
-    depends_on:
-      - node1
-
   node1:
-    build: ./backend/storage_node
+    build:
+      context: ./backend/storage_node
+      dockerfile: Dockerfile
     environment:
       - REDIS_URL=redis://redis:6379/0
       - CACHE_TTL=300
@@ -36,6 +29,16 @@ services:
       - redis
       - cockroachdb
 
+  gateway:
+    build:
+      context: ./backend/api_gateway
+      dockerfile: Dockerfile
+    environment:
+      - NODE_URL=http://node1:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - node1
+
 volumes:
   cockroach-data:
-  storage_data:
