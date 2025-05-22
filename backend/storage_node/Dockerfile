@@ -13,11 +13,12 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5) Copia o código-fonte do serviço
+# 5) Copia o código-fonte (API + worker)
 COPY app.py .
+COPY worker.py .
 
 # 6) Garante que o output de logs aparece logo no terminal
 ENV PYTHONUNBUFFERED=1
 
-# 7) Comando que arranca o micro-serviço FastAPI
+# 7) Por omissão o container serve **só** a API
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
