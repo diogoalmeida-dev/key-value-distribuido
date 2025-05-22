@@ -3,9 +3,12 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-
+    volumes:
+      - redis-data:/data
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -67,3 +70,5 @@ services:
 
 volumes:
   cockroach-data:
+  redis-data:
+  rabbit-data:

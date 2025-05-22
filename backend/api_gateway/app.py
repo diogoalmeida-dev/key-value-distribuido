@@ -6,6 +6,8 @@ import httpx
 import aio_pika
 from aio_pika import Message, DeliveryMode
 from datetime import datetime, timezone
+from typing import Any           #  <<<  adiciona isto
+
 
 # ——————————————————————————————
 # Configurações de ambiente
@@ -17,128 +19,166 @@ NODE_URL = os.getenv("NODE_URL", "http://node1:8000")
 # ——————————————————————————————
 # Função para publicar na fila
 # ——————————————————————————————
-async def publish_kv(data: dict):
-    # acrescenta timestamp em ISO 8601 (UTC)
-    data["ts"] = datetime.now(timezone.utc).isoformat()
+# app.py  (gateway)  ────────────────────────────────────────────────
+from datetime import datetime, timezone
+import aio_pika, json, os
+from aio_pika import Message, DeliveryMode
 
-    conn = await aio_pika.connect_robust(RABBITMQ_URL)
-    async with conn:
-        ch = await conn.channel()
-        await ch.declare_queue(QUEUE_NAME, durable=True)
-        msg = Message(
-            body=json.dumps(data).encode(),
-            delivery_mode=DeliveryMode.PERSISTENT
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+QUEUE_NAME   = "kv_requests"
+
+
+# ────────────────────────────────
+#  Utilidades de publicação
+# ────────────────────────────────
+async def _publish_raw(payload: dict[str, Any]) -> None:
+    """
+    Publica JSON codificado em UTF-8 na fila quorum `QUEUE_NAME`
+    usando *publisher-confirms*.
+    """
+    # 1) Estabelecer ligação
+    connection: aio_pika.RobustConnection = await aio_pika.connect_robust(
+        RABBITMQ_URL
+    )
+
+    async with connection:
+        # 2) Canal com publisher-confirms
+        channel: aio_pika.RobustChannel = await connection.channel(
+            publisher_confirms=True
         )
-        await ch.default_exchange.publish(msg, routing_key=QUEUE_NAME)
+
+        # 3) Garantir que a fila existe (quorum & durável)
+        await channel.declare_queue(
+            QUEUE_NAME,
+            durable=True,
+            arguments={"x-queue-type": "quorum"},
+        )
+
+        # 4) Publicar mensagem persistente
+        message = Message(
+            body=json.dumps(payload).encode(),
+            delivery_mode=DeliveryMode.PERSISTENT,
+        )
+        await channel.default_exchange.publish(
+            message,
+            routing_key=QUEUE_NAME,
+            mandatory=True,  # erro imediato se não houver rota/fila
+        )
 
 
-# ——————————————————————————————
-# Modelos Pydantic
-# ——————————————————————————————
+async def publish_cmd(cmd: str, key: str, value: str | None = None) -> None:
+    """
+    Publica um comando `put` ou `del` com carimbo temporal ISO-8601 UTC.
+    """
+    payload: dict[str, Any] = {
+        "cmd": cmd,  # "put" | "del"
+        "key": key,
+        "value": value,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    await _publish_raw(payload)
+
+
+# ────────────────────────────────
+#  Modelos Pydantic
+# ────────────────────────────────
 class KVRequest(BaseModel):
-    data: dict = Field(
+    data: dict[str, str] = Field(
         ...,
         example={"key": "username", "value": "alice"},
-        description="Dicionário com a chave e o valor a armazenar"
+        description="Par chave/valor a armazenar",
     )
+
 
 class StatusResponse(BaseModel):
-    status: str = Field(..., example="queued", description="Estado da operação")
+    status: str = Field(..., example="queued")
+
 
 class KVResponse(BaseModel):
-    data: dict = Field(
-        ...,
-        example={"value": "alice"},
-        description="Dicionário com o valor associado à chave"
+    data: dict[str, str] = Field(
+        ..., example={"value": "alice"}, description="Valor obtido"
     )
+
 
 class KeysResponse(BaseModel):
-    keys: list[str] = Field(
-        ...,
-        example=["username", "email"],
-        description="Lista de todas as chaves armazenadas"
-    )
+    keys: list[str] = Field(..., example=["username", "email"])
 
-# ——————————————————————————————
-# Instância FastAPI
-# ——————————————————————————————
+
+# ────────────────────────────────
+#  FastAPI
+# ────────────────────────────────
 app = FastAPI(
     title="API Gateway",
     version="0.1.0",
     description="""
-Gateway para enfileirar escritas via RabbitMQ e encaminhar leituras ao Storage Node.  
-Endpoints:
-- `/health`: verifica estado do Gateway.  
-- `/store` (PUT): coloca um pedido de escrita na fila.  
-- `/store` (GET): lê valor por chave do Storage Node.  
-- `/store` (DELETE): remove valor por chave no Storage Node.  
-- `/store/all`: lista todas as chaves no Storage Node.
+Gateway que **enfileira** alterações no RabbitMQ (quorum queue) e reencaminha leituras
+para o Storage Node.
 """,
     openapi_tags=[
-        {"name": "health", "description": "Verificação de estado do Gateway"},
-        {"name": "gateway", "description": "Operações de enfileiramento e leitura"}
+        {"name": "health", "description": "Estado do Gateway"},
+        {"name": "gateway", "description": "Operações chave-valor"},
     ],
 )
 
-@app.get(
-    "/health",
-    tags=["health"],
-    summary="Verificar estado do Gateway",
-    response_model=dict[str, str]
-)
-def health():
+
+@app.get("/health", tags=["health"], response_model=dict[str, str])
+def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+# ───────  PUT (escrita)  ───────
 @app.put(
     "/store",
     tags=["gateway"],
-    summary="Enfileirar par chave-valor",
-    description="Publica uma mensagem na fila RabbitMQ com o par chave-valor.",
+    summary="Enfileia PUT",
     response_model=StatusResponse,
-    status_code=202
+    status_code=202,
 )
-async def enqueue_store(item: KVRequest):
-    await publish_kv(item.data)
-    return {"status": "queued"}
+async def enqueue_put(item: KVRequest) -> StatusResponse:
+    key = item.data["key"]
+    value = item.data["value"]
+    await publish_cmd("put", key, value)
+    return StatusResponse(status="queued")
 
+
+# ───────  DELETE (escrita)  ───────
+@app.delete(
+    "/store",
+    tags=["gateway"],
+    summary="Enfileia DELETE",
+    status_code=202,
+    response_model=StatusResponse,
+)
+async def enqueue_delete(key: str) -> StatusResponse:
+    await publish_cmd("del", key)
+    return StatusResponse(status="queued")
+
+
+# ───────  GET (leitura)  ───────
 @app.get(
     "/store",
     tags=["gateway"],
     summary="Obter valor por chave",
-    description="Encaminha pedido GET para o Storage Node.",
     response_model=KVResponse,
-    responses={404: {"description": "Chave não encontrada"}}
 )
-async def get_item(key: str):
+async def get_item(key: str) -> KVResponse:
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{NODE_URL}/store", params={"key": key})
     if r.status_code != 200:
         raise HTTPException(r.status_code, r.text)
-    return r.json()
+    return KVResponse(**r.json())
 
-@app.delete(
-    "/store",
-    tags=["gateway"],
-    summary="Eliminar valor por chave",
-    description="Encaminha pedido DELETE para o Storage Node.",
-    status_code=204
-)
-async def delete_item(key: str):
-    async with httpx.AsyncClient() as client:
-        r = await client.delete(f"{NODE_URL}/store", params={"key": key})
-    if r.status_code != 204:
-        raise HTTPException(r.status_code, r.text)
 
+# ───────  LISTAGEM  ───────
 @app.get(
     "/store/all",
     tags=["gateway"],
     summary="Listar todas as chaves",
-    description="Encaminha pedido GET `/store/all` para o Storage Node.",
-    response_model=KeysResponse
+    response_model=KeysResponse,
 )
-async def list_all_keys():
+async def list_all_keys() -> KeysResponse:
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{NODE_URL}/store/all")
     if r.status_code != 200:
         raise HTTPException(r.status_code, r.text)
-    return r.json()
+    return KeysResponse(**r.json())

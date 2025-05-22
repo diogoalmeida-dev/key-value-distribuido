@@ -32,7 +32,8 @@ metadata = MetaData()
 kv_table = Table(
     "kv_store", metadata,
     Column("key", String, primary_key=True),
-    Column("value", String, nullable=False)
+    Column("value", String, nullable=False),
+    Column("updated_at", String, nullable=False)  # ISO string ou TIMESTAMP
 )
 
 # ——————————————————————————————
