@@ -98,7 +98,7 @@ async def get_item(key: str):
 
 @app.delete(
     "/store",
-    tags=["gateway"],
+    tags=["gatewayyy"],
     summary="Eliminar valor por chave (via Gateway)",
     description="Encaminha pedido DELETE para o Storage Node com parâmetro `key`.",
     status_code=204,
