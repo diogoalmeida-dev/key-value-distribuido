@@ -35,16 +35,14 @@ static_resources:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-                # dentro de http_connection_manager
                 access_log:
                   - name: envoy.access_loggers.file
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                      path: /dev/stdout           # escreve cada linha no STDOUT do container
+                      path: /dev/stdout
                       log_format:
                         text_format: |
                           [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% - %RESPONSE_DURATION% ms "%REQ(HOST)%" %UPSTREAM_HOST%
-
 
   clusters:
     # ---------- API Gateway ----------
@@ -53,6 +51,9 @@ static_resources:
       lb_policy: ROUND_ROBIN
       connect_timeout: 0.25s
       dns_lookup_family: V4_ONLY
+      common_lb_config:
+        healthy_panic_threshold:
+          value: 0          # evita panic mode quando há poucos nós saudáveis
       load_assignment:
         cluster_name: gateway_cluster
         endpoints:
@@ -75,11 +76,13 @@ static_resources:
       lb_policy: ROUND_ROBIN
       connect_timeout: 0.25s
       dns_lookup_family: V4_ONLY
+      common_lb_config:
+        healthy_panic_threshold:
+          value: 0          # evita panic mode quando há poucos nós saudáveis
       load_assignment:
         cluster_name: storage_cluster
         endpoints:
           - lb_endpoints:
-              # Repete um bloco destes por cada nó (node1, node2, node3, …)
               - endpoint:
                   address:
                     socket_address: { address: node1, port_value: 8000 }
