@@ -10,7 +10,7 @@ Este repositório contém a implementação de um sistema de armazenamento distr
 
 O sistema segue um padrão de micro-serviços, organizado em clusters e com um reverse proxy na entrada.
 
-![Diagrama de Arquitetura](docs/arquitetura.jpeg)
+![Diagrama de Arquitetura](docs/Arquitetura.jpeg)
 
 > **Figura:** Ilustração dos componentes principais e dos fluxos de dados entre eles.
 
