@@ -162,6 +162,7 @@ def list_keys():
 async def health_check():
     return {"status": "ok"}
 
+# usado para debug sobre o envoy
 @app.get("/whoami")
 async def whoami():
     return {"host": os.getenv("HOSTNAME", "unknown")}
