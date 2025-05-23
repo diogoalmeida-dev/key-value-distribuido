@@ -8,7 +8,6 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes: [redis-data:/data]
     networks: [backend]
-   # restart: unless-stopped     
 
   redis-replica-1:
     image: redis:7-alpine
@@ -28,12 +27,9 @@ services:
     networks: [backend]
     restart: always
 
- # ---------- SENTINELS ----------  # ---------- SENTINELS ----------
-    # ---------- SENTINELS ----------
   # ---------- SENTINELS ----------
   sentinel-1: &sentinel
     image: redis:7-alpine
-    # espera até o master responder PONG; depois arranca o Sentinel SEM re-escrever o conf
     entrypoint: >
       /bin/sh -c '
         echo "[sentinel] à espera de redis-master:6379 …";
@@ -44,7 +40,7 @@ services:
         exec redis-server /etc/redis/sentinel.conf --sentinel
       '
     volumes:
-      - ./sentinel/sentinel.conf:/etc/redis/sentinel.conf   # leitura/escrita
+      - ./sentinel/sentinel.conf:/etc/redis/sentinel.conf
     networks: [backend]
     restart: always
 
@@ -52,7 +48,6 @@ services:
     <<: *sentinel
   sentinel-3:
     <<: *sentinel
-
 
   # ---------- RABBITMQ ----------
   rabbitmq:
@@ -67,15 +62,75 @@ services:
     networks: [backend]
     restart: always
 
-  # ---------- COCKROACHDB ----------
-  cockroachdb:
+  # ---------- COCKROACHDB CLUSTER ----------  # ---------- COCKROACHDB CLUSTER ----------
+  cockroach-1:
     image: cockroachdb/cockroach:v23.1.5
-    command: start-single-node --insecure --store=/cockroach/cockroach-data
-    ports: ["26257:26257", "8080:8080"]
-    volumes: [cockroach-data:/cockroach/cockroach-data]
+    hostname: cockroach-1
+    command:
+      - start
+      - --insecure
+      - --join=cockroach-1:26257,cockroach-2:26257,cockroach-3:26257
+      - --store=/cockroach/cockroach-data
+      - --listen-addr=0.0.0.0:26257
+      - --http-addr=0.0.0.0:8080
+      - --advertise-addr=cockroach-1:26257
+    volumes:
+      - cockroach-data-1:/cockroach/cockroach-data
+    networks: [backend]
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    restart: always
+
+  cockroach-2:
+    image: cockroachdb/cockroach:v23.1.5
+    hostname: cockroach-2
+    command:
+      - start
+      - --insecure
+      - --join=cockroach-1:26257,cockroach-2:26257,cockroach-3:26257
+      - --store=/cockroach/cockroach-data
+      - --listen-addr=0.0.0.0:26257
+      - --advertise-addr=cockroach-2:26257
+    volumes:
+      - cockroach-data-2:/cockroach/cockroach-data
     networks: [backend]
     restart: always
 
+  cockroach-3:
+    image: cockroachdb/cockroach:v23.1.5
+    hostname: cockroach-3
+    command:
+      - start
+      - --insecure
+      - --join=cockroach-1:26257,cockroach-2:26257,cockroach-3:26257
+      - --store=/cockroach/cockroach-data
+      - --listen-addr=0.0.0.0:26257
+      - --advertise-addr=cockroach-3:26257
+    volumes:
+      - cockroach-data-3:/cockroach/cockroach-data
+    networks: [backend]
+    restart: always
+
+  cockroach-init:
+    image: cockroachdb/cockroach:v23.1.5
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        # espera pelos nós
+        for i in $(seq 1 10); do
+          cockroach node status --insecure --host=cockroach-1:26257 && break || sleep 2
+        done
+        # inicializa o cluster
+        cockroach init --insecure --host=cockroach-1:26257
+    depends_on:
+      - cockroach-1
+      - cockroach-2
+      - cockroach-3
+    networks: [backend]
+    restart: "no"
+    
   # ---------- STORAGE NODE ----------
   node1:
     build: ./backend/storage_node
@@ -83,11 +138,11 @@ services:
     environment:
       REDIS_SENTINELS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CACHE_TTL: "300"
-      COCKROACH_URL: cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
+      COCKROACH_URL: cockroachdb://root@cockroach-1:26257/defaultdb?sslmode=disable
     expose: ["8000"]
     depends_on:
       - sentinel-1
-      - cockroachdb
+      - cockroach-1
     networks: [backend]
     restart: always
 
@@ -98,15 +153,15 @@ services:
     environment:
       REDIS_SENTINELS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CACHE_TTL: "300"
-      COCKROACH_URL: cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
+      COCKROACH_URL: cockroachdb://root@cockroach-1:26257/defaultdb?sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       QUEUE_NAME: kv_requests
     depends_on:
       - rabbitmq
       - sentinel-1
-      - cockroachdb
+      - cockroach-1
     networks: [backend]
-    restart: on-failure      # tenta de novo só quando termina com erro
+    restart: on-failure
 
   # ---------- ENVOY PROXY ----------
   envoy:
@@ -148,6 +203,8 @@ services:
     restart: always
 
 volumes:
-  cockroach-data:
+  cockroach-data-1:
+  cockroach-data-2:
+  cockroach-data-3:
   redis-data:
   rabbit-data:

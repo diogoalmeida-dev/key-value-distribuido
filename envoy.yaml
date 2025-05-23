@@ -18,6 +18,13 @@ static_resources:
                     - name: external_requests
                       domains: ["*"]
                       routes:
+                        # expõe /redis/keys publicamente
+                        - match:
+                            prefix: "/redis/keys"
+                          route:
+                            cluster: storage_cluster
+                            timeout: 5s
+                        # resto do tráfego para o gateway
                         - match:
                             prefix: "/"
                           route:
@@ -28,28 +35,24 @@ static_resources:
                     - name: internal_storage
                       domains: ["storage.internal"]
                       routes:
-                        # rota para GET /store
                         - match:
                             prefix: "/store"
                           route:
                             cluster: storage_cluster
                             timeout: 5s
 
-                        # rota para GET /store/all
                         - match:
                             prefix: "/store/all"
                           route:
                             cluster: storage_cluster
                             timeout: 5s
 
-                        # nova rota para GET /redis/keys
                         - match:
                             prefix: "/redis/keys"
                           route:
                             cluster: storage_cluster
                             timeout: 5s
 
-                        # catch-all interno (opcional)
                         - match:
                             prefix: "/"
                           route:
@@ -88,6 +91,7 @@ static_resources:
                     socket_address:
                       address: gateway
                       port_value: 8000
+
     # ---------- Storage Nodes ----------
     - name: storage_cluster
       type: STRICT_DNS
@@ -96,7 +100,7 @@ static_resources:
       dns_lookup_family: V4_ONLY
       common_lb_config:
         healthy_panic_threshold:
-          value: 0          # evita panic mode quando há poucos nós saudáveis
+          value: 0
       load_assignment:
         cluster_name: storage_cluster
         endpoints:
