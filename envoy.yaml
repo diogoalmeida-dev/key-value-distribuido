@@ -2,7 +2,9 @@ static_resources:
   listeners:
     - name: http_listener
       address:
-        socket_address: { address: 0.0.0.0, port_value: 8080 }
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
       filter_chains:
         - filters:
             - name: envoy.filters.network.http_connection_manager
@@ -13,24 +15,47 @@ static_resources:
                   name: local_route
                   virtual_hosts:
                     # ─────────  Tráfego EXTERNO  ─────────
-                    # qualquer domínio (ex.: localhost) → API Gateway
                     - name: external_requests
                       domains: ["*"]
                       routes:
-                        - match: { prefix: "/" }
+                        - match:
+                            prefix: "/"
                           route:
                             cluster: gateway_cluster
                             timeout: 5s
 
                     # ─────────  Tráfego INTERNO  ─────────
-                    # Host: storage.internal  → Storage Nodes
                     - name: internal_storage
                       domains: ["storage.internal"]
                       routes:
-                        - match: { prefix: "/" }
+                        # rota para GET /store
+                        - match:
+                            prefix: "/store"
                           route:
                             cluster: storage_cluster
                             timeout: 5s
+
+                        # rota para GET /store/all
+                        - match:
+                            prefix: "/store/all"
+                          route:
+                            cluster: storage_cluster
+                            timeout: 5s
+
+                        # nova rota para GET /redis/keys
+                        - match:
+                            prefix: "/redis/keys"
+                          route:
+                            cluster: storage_cluster
+                            timeout: 5s
+
+                        # catch-all interno (opcional)
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: storage_cluster
+                            timeout: 5s
+
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
@@ -53,23 +78,16 @@ static_resources:
       dns_lookup_family: V4_ONLY
       common_lb_config:
         healthy_panic_threshold:
-          value: 0          # evita panic mode quando há poucos nós saudáveis
+          value: 0
       load_assignment:
         cluster_name: gateway_cluster
         endpoints:
           - lb_endpoints:
               - endpoint:
                   address:
-                    socket_address: { address: gateway, port_value: 8000 }
-      health_checks:
-        - timeout: 3s
-          interval: 5s
-          healthy_threshold: 2
-          unhealthy_threshold: 2
-          http_health_check:
-            path: /health
-            expected_statuses: [{ start: 200, end: 299 }]
-
+                    socket_address:
+                      address: gateway
+                      port_value: 8000
     # ---------- Storage Nodes ----------
     - name: storage_cluster
       type: STRICT_DNS

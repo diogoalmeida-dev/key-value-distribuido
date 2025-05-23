@@ -8,7 +8,7 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes: [redis-data:/data]
     networks: [backend]
-    restart: always          # reinicia se falhar
+   # restart: unless-stopped     
 
   redis-replica-1:
     image: redis:7-alpine
