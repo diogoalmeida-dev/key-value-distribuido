@@ -48,7 +48,7 @@ cd key-value-distribuido
 1. **Clone o repositório**
 
    ```bash
-   git clone git@github.com:a66264/sistemas-distribuidos-spd.git
+   git clone git@github.com:a81477/key-value-distribuido.git
    cd sistemas-distribuidos-spd
    ```
 2. **Configure variáveis de ambiente**
