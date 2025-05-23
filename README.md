@@ -155,5 +155,5 @@ cd key-value-distribuido
 
 ---
 
-> **Demo:** Disponível em ambiente de staging via URL pública (ver arquivo `docs/demo.md`).
+> **Demo:** Disponível no ficheiro (`docs/demo.md`).
 > **Repositório privado:** Acesso via GitHub a81477 (domínio ualg.pt).
