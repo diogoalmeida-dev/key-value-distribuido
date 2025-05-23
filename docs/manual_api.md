@@ -1,5 +1,7 @@
 # API Gateway
 
+a81477
+
 Este repositório contém a **API Gateway** desenvolvida em FastAPI, que enfileira operações de escrita no RabbitMQ e reencaminha leituras para um Storage Node.
 
 ## Índice
