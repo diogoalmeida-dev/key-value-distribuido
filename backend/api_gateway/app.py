@@ -14,7 +14,9 @@ from typing import Any           #  <<<  adiciona isto
 # ——————————————————————————————
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = "kv_requests"
-NODE_URL = os.getenv("NODE_URL", "http://envoy:8080")   # antes era node1:8000
+NODE_URL = os.getenv("NODE_URL", "http://envoy:8080") 
+# ─── Cabeçalho que diz ao Envoy que é tráfego interno para os Storage Nodes ───
+INTERNAL_HEADERS = {"Host": "storage.internal"}
 
 
 # ——————————————————————————————
@@ -116,11 +118,28 @@ para o Storage Node.
     ],
 )
 
+# ───────  GET (leitura)  ───────
+@app.get("/store", tags=["gateway"], summary="Obter valor por chave",
+         response_model=KVResponse)
+async def get_item(key: str) -> KVResponse:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{NODE_URL}/store",
+                             params={"key": key},
+                             headers=INTERNAL_HEADERS)             # ▼
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.text)
+    return KVResponse(**r.json())
 
-@app.get("/health", tags=["health"], response_model=dict[str, str])
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
+# ───────  LISTA  ───────
+@app.get("/store/all", tags=["gateway"], summary="Listar todas as chaves",
+         response_model=KeysResponse)
+async def list_all_keys() -> KeysResponse:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{NODE_URL}/store/all",
+                             headers=INTERNAL_HEADERS)             # ▼
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.text)
+    return KeysResponse(**r.json())
 
 # ───────  PUT (escrita)  ───────
 @app.put(
@@ -148,33 +167,3 @@ async def enqueue_put(item: KVRequest) -> StatusResponse:
 async def enqueue_delete(key: str) -> StatusResponse:
     await publish_cmd("del", key)
     return StatusResponse(status="queued")
-
-
-# ───────  GET (leitura)  ───────
-@app.get(
-    "/store",
-    tags=["gateway"],
-    summary="Obter valor por chave",
-    response_model=KVResponse,
-)
-async def get_item(key: str) -> KVResponse:
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{NODE_URL}/store", params={"key": key})
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, r.text)
-    return KVResponse(**r.json())
-
-
-# ───────  LISTAGEM  ───────
-@app.get(
-    "/store/all",
-    tags=["gateway"],
-    summary="Listar todas as chaves",
-    response_model=KeysResponse,
-)
-async def list_all_keys() -> KeysResponse:
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{NODE_URL}/store/all")
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, r.text)
-    return KeysResponse(**r.json())

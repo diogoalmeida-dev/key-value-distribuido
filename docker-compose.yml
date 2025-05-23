@@ -24,15 +24,15 @@ services:
       - cockroach-data:/cockroach/cockroach-data
 
   # ---------- STORAGE NODE ----------
-  node1:                       # mantém o nome p/ não tocarem em variáveis
+  node1:
     build: ./backend/storage_node
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       REDIS_URL: redis://redis:6379/0
       CACHE_TTL: "300"
       COCKROACH_URL: cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
-    expose:                    
-      - "8000"                 
+    expose:
+      - "8000"
     depends_on:
       redis:
         condition: service_started
@@ -56,6 +56,19 @@ services:
         condition: service_started
       cockroachdb:
         condition: service_started
+
+  # ---------- NGINX LOAD BALANCER ----------
+  nginx:
+    build:
+      context: ./backend/nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - envoy
+    networks:
+      - default
+
+  # ---------- ENVOY PROXY ----------
   envoy:
     build:
       context: ./backend/envoy
@@ -72,14 +85,14 @@ services:
       interval: 10s
       retries: 3
 
-
   # ---------- API GATEWAY ----------
   gateway:
     build: ./backend/api_gateway
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      NODE_URL: http://node1:8000
-    ports: ["8000:8000"]
+      NODE_URL: http://envoy:8080
+    expose:
+      - "8000"
     depends_on:
       node1:
         condition: service_started
