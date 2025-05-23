@@ -9,17 +9,33 @@ from sqlalchemy import (
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.dialects.postgresql import insert
 
+# … imports inalterados …
+from redis.sentinel import Sentinel        # << NOVO
+
 # ───────────────────────────── ENV ──────────────────────────────
-REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CACHE_TTL   = int(os.getenv("CACHE_TTL", "300"))
+# deixamos REDIS_URL como fallback, mas passamos a usar REDIS_SENTINELS
+REDIS_SENTINELS = os.getenv(
+    "REDIS_SENTINELS",
+    "sentinel-1:26379,sentinel-2:26379,sentinel-3:26379",
+).split(",")
+
+CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))
 COCKROACH_URL = os.getenv(
     "COCKROACH_URL",
     "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable",
 )
 
 # ───────────────────────── REDIS / SQL ─────────────────────────
-redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+sentinel_nodes = [tuple(host.split(":")) for host in REDIS_SENTINELS]
+sentinel = Sentinel(sentinel_nodes, socket_timeout=0.2, decode_responses=True)
+
+# liga-se sempre ao master ativo (mymaster → definido em sentinel.conf)
+redis_client = sentinel.master_for("mymaster",
+                                   socket_timeout=0.2,
+                                   decode_responses=True)
+
 engine = create_engine(COCKROACH_URL, connect_args={"sslmode": "disable"})
+# … resto do ficheiro permanece igual …
 
 metadata = MetaData()
 kv_table = Table(

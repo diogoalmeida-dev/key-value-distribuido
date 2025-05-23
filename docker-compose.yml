@@ -1,78 +1,116 @@
-services:
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-    volumes:
-      - redis-data:/data
+networks:
+  backend:
 
+services:
+  # ---------- REDIS (+ SENTINEL) ----------
+  redis-master:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    networks: [backend]
+    restart: always          # reinicia se falhar
+
+  redis-replica-1:
+    image: redis:7-alpine
+    command: ["redis-server",
+              "--replicaof", "redis-master", "6379",
+              "--appendonly", "yes"]
+    depends_on: [redis-master]
+    networks: [backend]
+    restart: always
+
+  redis-replica-2:
+    image: redis:7-alpine
+    command: ["redis-server",
+              "--replicaof", "redis-master", "6379",
+              "--appendonly", "yes"]
+    depends_on: [redis-master]
+    networks: [backend]
+    restart: always
+
+ # ---------- SENTINELS ----------  # ---------- SENTINELS ----------
+    # ---------- SENTINELS ----------
+  # ---------- SENTINELS ----------
+  sentinel-1: &sentinel
+    image: redis:7-alpine
+    # espera até o master responder PONG; depois arranca o Sentinel SEM re-escrever o conf
+    entrypoint: >
+      /bin/sh -c '
+        echo "[sentinel] à espera de redis-master:6379 …";
+        until redis-cli -h redis-master -p 6379 ping 2>/dev/null | grep -q PONG ; do
+          sleep 1;
+        done;
+        echo "[sentinel] master OK – a iniciar o Sentinel";
+        exec redis-server /etc/redis/sentinel.conf --sentinel
+      '
+    volumes:
+      - ./sentinel/sentinel.conf:/etc/redis/sentinel.conf   # leitura/escrita
+    networks: [backend]
+    restart: always
+
+  sentinel-2:
+    <<: *sentinel
+  sentinel-3:
+    <<: *sentinel
+
+
+  # ---------- RABBITMQ ----------
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports: ["5672:5672", "15672:15672"]
-    volumes:
-      - rabbit-data:/var/lib/rabbitmq
+    volumes: [rabbit-data:/var/lib/rabbitmq]
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [backend]
+    restart: always
 
+  # ---------- COCKROACHDB ----------
   cockroachdb:
     image: cockroachdb/cockroach:v23.1.5
     command: start-single-node --insecure --store=/cockroach/cockroach-data
     ports: ["26257:26257", "8080:8080"]
-    volumes:
-      - cockroach-data:/cockroach/cockroach-data
+    volumes: [cockroach-data:/cockroach/cockroach-data]
+    networks: [backend]
+    restart: always
 
   # ---------- STORAGE NODE ----------
   node1:
     build: ./backend/storage_node
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
-      REDIS_URL: redis://redis:6379/0
+      REDIS_SENTINELS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CACHE_TTL: "300"
       COCKROACH_URL: cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
-    expose:
-      - "8000"
+    expose: ["8000"]
     depends_on:
-      redis:
-        condition: service_started
-      cockroachdb:
-        condition: service_started
+      - sentinel-1
+      - cockroachdb
+    networks: [backend]
+    restart: always
 
   # ---------- WORKER ----------
   worker:
     build: ./backend/storage_node
     command: ["python", "worker.py"]
     environment:
-      REDIS_URL: redis://redis:6379/0
+      REDIS_SENTINELS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CACHE_TTL: "300"
       COCKROACH_URL: cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       QUEUE_NAME: kv_requests
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      cockroachdb:
-        condition: service_started
-
-  # ---------- NGINX LOAD BALANCER ----------
-  nginx:
-    build:
-      context: ./backend/nginx
-    ports:
-      - "80:80"
-    depends_on:
-      - envoy
-    networks:
-      - default
+      - rabbitmq
+      - sentinel-1
+      - cockroachdb
+    networks: [backend]
+    restart: on-failure      # tenta de novo só quando termina com erro
 
   # ---------- ENVOY PROXY ----------
   envoy:
-    build:
-      context: ./backend/envoy
-      dockerfile: Dockerfile
+    build: { context: ./backend/envoy, dockerfile: Dockerfile }
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
@@ -84,6 +122,17 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9901/server_info"]
       interval: 10s
       retries: 3
+    networks: [backend]
+    restart: always
+
+  # ---------- NGINX ----------
+  nginx:
+    build: { context: ./backend/nginx }
+    ports: ["80:80"]
+    depends_on:
+      - envoy
+    networks: [backend]
+    restart: always
 
   # ---------- API GATEWAY ----------
   gateway:
@@ -91,13 +140,12 @@ services:
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       NODE_URL: http://envoy:8080
-    expose:
-      - "8000"
+    expose: ["8000"]
     depends_on:
-      node1:
-        condition: service_started
-      rabbitmq:
-        condition: service_healthy
+      - node1
+      - rabbitmq
+    networks: [backend]
+    restart: always
 
 volumes:
   cockroach-data:

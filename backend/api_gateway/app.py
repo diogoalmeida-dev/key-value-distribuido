@@ -6,7 +6,7 @@ import httpx
 import aio_pika
 from aio_pika import Message, DeliveryMode
 from datetime import datetime, timezone
-from typing import Any           #  <<<  adiciona isto
+from typing import Any
 
 
 # ——————————————————————————————
