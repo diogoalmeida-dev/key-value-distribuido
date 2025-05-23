@@ -167,3 +167,7 @@ async def enqueue_put(item: KVRequest) -> StatusResponse:
 async def enqueue_delete(key: str) -> StatusResponse:
     await publish_cmd("del", key)
     return StatusResponse(status="queued")
+
+@app.get("/health", status_code=status.HTTP_200_OK)
+def healthcheck():
+    return {"status": "ok"}
