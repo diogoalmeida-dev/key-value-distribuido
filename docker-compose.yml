@@ -49,18 +49,46 @@ services:
   sentinel-3:
     <<: *sentinel
 
-  # ---------- RABBITMQ ----------
-  rabbitmq:
+  # ---------- RABBITMQ ----------  
+  rabbit-1:
     image: rabbitmq:3-management-alpine
-    ports: ["5672:5672", "15672:15672"]
-    volumes: [rabbit-data:/var/lib/rabbitmq]
-    healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    container_name: rabbit-1
+    hostname: rabbit-1
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "PLSNEED20"
+      RABBITMQ_NODENAME: "rabbit@rabbit-1"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit1-data:/var/lib/rabbitmq
     networks: [backend]
-    restart: always
+
+  rabbit-2:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbit-2
+    hostname: rabbit-2
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "PLSNEED20"
+      RABBITMQ_NODENAME: "rabbit@rabbit-2"
+    depends_on:
+      - rabbit-1
+    volumes:
+      - rabbit2-data:/var/lib/rabbitmq
+    networks: [backend]
+    entrypoint: >
+      /bin/sh -c "
+        # 1) Esperar pelo líder
+        until rabbitmqctl -n rabbit@rabbit-1 status; do sleep 1; done;
+        # 2) Parar app local
+        rabbitmqctl -n rabbit@rabbit-2 stop_app;
+        # 3) Juntar ao cluster
+        rabbitmqctl -n rabbit@rabbit-2 join_cluster rabbit@rabbit-1;
+        # 4) Reiniciar app
+        rabbitmqctl -n rabbit@rabbit-2 start_app;
+        # 5) Iniciar servidor
+        rabbitmq-server
+      "
 
   # ---------- COCKROACHDB CLUSTER ----------  # ---------- COCKROACHDB CLUSTER ----------
   cockroach-1:
@@ -130,7 +158,7 @@ services:
       - cockroach-3
     networks: [backend]
     restart: "no"
-    
+
   # ---------- STORAGE NODE ----------
   node1:
     build: ./backend/storage_node
@@ -154,10 +182,10 @@ services:
       REDIS_SENTINELS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CACHE_TTL: "300"
       COCKROACH_URL: cockroachdb://root@cockroach-1:26257/defaultdb?sslmode=disable
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: amqp://guest:guest@rabbit-1:5672/
       QUEUE_NAME: kv_requests
     depends_on:
-      - rabbitmq
+      - rabbit-1
       - sentinel-1
       - cockroach-1
     networks: [backend]
@@ -193,12 +221,12 @@ services:
   gateway:
     build: ./backend/api_gateway
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: amqp://guest:guest@rabbit-1:5672/
       NODE_URL: http://envoy:8080
     expose: ["8000"]
     depends_on:
       - node1
-      - rabbitmq
+      - rabbit-1
     networks: [backend]
     restart: always
 
@@ -207,4 +235,5 @@ volumes:
   cockroach-data-2:
   cockroach-data-3:
   redis-data:
-  rabbit-data:
+  rabbit1-data:
+  rabbit2-data:
