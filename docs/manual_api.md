@@ -1,150 +1,132 @@
-# Manual da API REST
+# API Gateway
 
-Este manual explica como aceder e utilizar a API REST do sistema distribuído de armazenamento key-value, aproveitando o **Swagger UI** do **FastAPI** e exemplos de comandos em linha de comando.
+Este repositório contém a **API Gateway** desenvolvida em FastAPI, que enfileira operações de escrita no RabbitMQ e reencaminha leituras para um Storage Node.
 
----
+## Índice
 
-## ÍNDICE
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação](#instalação)
+- [Configuração](#configuração)
+- [Endpoints](#endpoints)
+  - [Health Check](#health-check)
+  - [PUT /store](#put-store)
+  - [GET /store](#get-store)
+  - [DELETE /store](#delete-store)
+- [Exemplos curl.exe](#exemplos-curlexe)
+- [Códigos de Erro (4xx)](#códigos-de-erro-4xx)
 
-1. [Aceder ao Swagger UI](#1-aceder-ao-swagger-ui)
-2. [Utilização via Swagger UI](#2-utilização-via-swagger-ui)
+## Pré-requisitos
 
-   * 2.1 [Inserir (PUT)](#21-inserir-put)
-   * 2.2 [Consultar (GET)](#22-consultar-get)
-   * 2.3 [Eliminar (DELETE)](#23-eliminar-delete)
-   * 2.4 [Listar todas as chaves (GET /store/all)](#24-listar-todas-as-chaves-get-storeall)
-3. [Exportar especificação OpenAPI](#3-exportar-especificação-openapi)
-4. [Exemplos em linha de comando](#4-exemplos-em-linha-de-comando)
+- Python 3.9+
+- [RabbitMQ](https://www.rabbitmq.com/) em funcionamento
+- Storage Node acessível (via HTTP)
+- Variáveis de ambiente:
+  - `RABBITMQ_URL`: URL de ligação ao RabbitMQ (ex: `amqp://guest:guest@rabbitmq:5672/`)
+  - `NODE_URL`: URL base do Storage Node (ex: `http://envoy:8080`)
 
-   * 4.1 [Usando curl (Git Bash / Linux)](#41-usando-curl-git-bash--linux)
-   * 4.2 [Usando PowerShell (Windows)](#42-usando-powershell-windows)
-
----
-
-## 1. Aceder ao Swagger UI
-
-1. Assegura-te de que os serviços estão ativos:
-
-   ```bash
-   # Linux / WSL 2
-   ./start.sh
-
-   # Windows PowerShell
-   .\start.ps1
-   ```
-2. Abre o browser e navega para:
-
-   ```
-   http://localhost:8000/docs
-   ```
-3. Vais encontrar a interface interactiva com todos os endpoints disponíveis:
-
-   * **PUT /store**
-   * **GET /store**
-   * **DELETE /store**
-   * **GET /store/all**
-   * **GET /health**
-
-> O Swagger UI mostra definições de rota, parâmetros, exemplos de payload e permite usar **Try it out** para testar diretamente no browser.
-
-## 2. Utilização via Swagger UI
-
-### 2.1 Inserir (PUT)
-
-1. Expande o endpoint **PUT /store**.
-2. Clica em **Try it out**.
-3. No campo de request, substitui o exemplo por:
-
-   ```json
-   {
-     "data": { "key": "foo", "value": "bar" }
-   }
-   ```
-4. Clica em **Execute**.
-5. Confirma que o **Status Code** é `201 Created` e o **Response Body** mostra:
-
-   ```json
-   { "status": "stored" }
-   ```
-
-### 2.2 Consultar (GET)
-
-1. Expande o endpoint **GET /store**.
-2. Clica em **Try it out**.
-3. No campo `key`, insere `foo`.
-4. Clica em **Execute**.
-5. Verifica a resposta:
-
-   ```json
-   { "data": { "value": "bar" } }
-   ```
-
-### 2.3 Eliminar (DELETE)
-
-1. Expande o endpoint **DELETE /store**.
-2. Clica em **Try it out**.
-3. No campo `key`, insere `foo`.
-4. Clica em **Execute**.
-5. O **Status Code** deve ser `204 No Content`.
-
-### 2.4 Listar todas as chaves (GET /store/all)
-
-1. Expande o endpoint **GET /store/all**.
-2. Clica em **Try it out** e depois em **Execute**.
-3. A resposta exibe todas as keys armazenadas:
-
-   ```json
-   { "keys": ["foo"] }
-   ```
-
-## 3. Exportar especificação OpenAPI
-
-Para integrar com outras ferramentas ou gerar SDKs:
-
-1. Acede a:
-
-   ```
-   http://localhost:8000/openapi.json
-   ```
-2. Guarda o conteúdo em `docs/openapi.json` no repositório.
-
-## 4. Exemplos em linha de comando
-
-Para complementar a interface Web, podes usar **curl** ou **Invoke-RestMethod**.
-
-### 4.1 Usando curl (Git Bash / Linux)
+## Instalação
 
 ```bash
-# Inserir par key-value
-echo "Inserir 'foo':'bar'"
-curl -X PUT "http://localhost:8000/store" \
-     -H "Content-Type: application/json" \
-     -d '{"data":{"key":"foo","value":"bar"}}'
-
-# Consultar valor
-curl "http://localhost:8000/store?key=foo"
-
-# Eliminar par
-curl -X DELETE "http://localhost:8000/store?key=foo"
-
-# Listar todas as chaves
-curl "http://localhost:8000/store/all"
+git clone <repositório>
+cd <diretório>
+pip install -r requirements.txt
 ```
 
-### 4.2 Usando PowerShell (Windows)
+## Configuração
 
-```powershell
-# Inserir par key-value
-Invoke-RestMethod -Method PUT -Uri "http://localhost:8000/store" \
-  -Headers @{ "Content-Type" = "application/json" } \
-  -Body '{"data":{"key":"foo","value":"bar"}}'
+Defina as variáveis de ambiente antes de arrancar a aplicação:
 
-# Consultar valor
-Invoke-RestMethod -Method GET -Uri "http://localhost:8000/store?key=foo"
-
-# Eliminar par
-Invoke-RestMethod -Method DELETE -Uri "http://localhost:8000/store?key=foo"
-
-# Listar todas as chaves
-Invoke-RestMethod -Method GET -Uri "http://localhost:8000/store/all"
+```bash
+export RABBITMQ_URL="amqp://guest:guest@rabbitmq:5672/"
+export NODE_URL="http://envoy:8080"
 ```
+
+## Endpoints
+
+### Health Check
+
+```http
+GET /health
+```
+
+- **Descrição:** Verifica se o serviço está operacional.
+- **Resposta 200 OK:**
+  ```json
+  { "status": "ok" }
+  ```
+
+### PUT /store
+
+```http
+PUT /store
+Content-Type: application/json
+```
+
+- **Descrição:** Enfileira um pedido de escrita (PUT) no RabbitMQ.
+- **Corpo (application/json):**
+  ```json
+  {
+    "data": {
+      "key": "username",
+      "value": "alice"
+    }
+  }
+  ```
+- **Resposta 202 Accepted:**
+  ```json
+  { "status": "queued" }
+  ```
+
+### GET /store
+
+```http
+GET /store?key={key}
+```
+
+- **Descrição:** Obtém o valor associado à chave no Storage Node.
+- **Parâmetros:**
+  - `key` (string, obrigatório): chave a recuperar.
+- **Resposta 200 OK:**
+  ```json
+  { "data": { "value": "alice" } }
+  ```
+
+### DELETE /store
+
+```http
+DELETE /store?key={key}
+```
+
+- **Descrição:** Enfileira um pedido de eliminação (DELETE) no RabbitMQ.
+- **Parâmetros:**
+  - `key` (string, obrigatório): chave a eliminar.
+- **Resposta 202 Accepted:**
+  ```json
+  { "status": "queued" }
+  ```
+
+## Exemplos curl.exe
+
+```bash
+# Health Check
+curl.exe -X GET "http://localhost:8000/health"
+
+# Enfileirar PUT
+curl.exe -X PUT "http://localhost:8000/store" ^
+  -H "Content-Type: application/json" ^
+  -d "{"data":{"key":"username","value":"alice"}}"
+
+# Obter valor
+curl.exe -X GET "http://localhost:8000/store?key=username"
+
+# Enfileirar DELETE
+curl.exe -X DELETE "http://localhost:8000/store?key=username"
+```
+
+## Códigos de Erro (4xx)
+
+- **400 Bad Request:** Parâmetro em falta ou formato inválido.
+- **404 Not Found:** Chave não encontrada no Storage Node (GET /store).
+- **422 Unprocessable Entity:** Falha na validação do corpo JSON.
+- **502 Bad Gateway:** Erro ao contactar o Storage Node para leitura.
+
