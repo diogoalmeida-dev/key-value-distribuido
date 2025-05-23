@@ -160,7 +160,7 @@ async def enqueue_put(item: KVRequest) -> StatusResponse:
 @app.delete(
     "/store",
     tags=["gateway"],
-    summary="Enfileia DELETE",
+    summary="Enqueue DELETE",
     status_code=202,
     response_model=StatusResponse,
 )
