@@ -38,7 +38,7 @@ Para clonar e executar este repositório, só precisas de ter instalado no teu s
 
 Após isso, basta correr:
 ```bash
-git clone <repo-url>
+git clone <https://github.com/a81477/key-value-distribuido>
 cd key-value-distribuido
 ./start.sh
 
