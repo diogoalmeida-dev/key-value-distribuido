@@ -1,0 +1,63 @@
+static_resources:
+  listeners:
+    - name: storage_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: storage_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: storage_cluster
+                            timeout: 5s
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: storage_cluster
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      connect_timeout: 0.25s
+      dns_lookup_family: V4_ONLY
+      common_http_protocol_options:
+        max_requests_per_connection: 1
+      load_assignment:
+        cluster_name: storage_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: node1
+                      port_value: 8000
+      health_checks:
+        - timeout: 3s
+          interval: 5s
+          healthy_threshold: 2
+          unhealthy_threshold: 2
+          http_health_check:
+            path: /health
+            expected_statuses:
+              - start: 200
+                end: 299
+
+admin:
+  access_log_path: /dev/stdout
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901

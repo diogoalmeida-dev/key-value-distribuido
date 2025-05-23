@@ -126,3 +126,15 @@ def list_keys():
     with engine.connect() as conn:
         keys = [r.key for r in conn.execute(select(kv_table.c.key))]
     return {"keys": keys}
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    """
+    Health check endpoint para integração com Envoy.
+    Devolve 200 OK se a aplicação estiver a correr.
+    """
+    return {"status": "ok"}
+
+@app.get("/whoami")
+async def whoami():
+    return {"host": os.getenv("HOSTNAME", "unknown")}

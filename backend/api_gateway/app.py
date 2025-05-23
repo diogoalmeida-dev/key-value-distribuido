@@ -14,7 +14,8 @@ from typing import Any           #  <<<  adiciona isto
 # ——————————————————————————————
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = "kv_requests"
-NODE_URL = os.getenv("NODE_URL", "http://node1:8000")
+NODE_URL = os.getenv("NODE_URL", "http://envoy:8080")   # antes era node1:8000
+
 
 # ——————————————————————————————
 # Função para publicar na fila
