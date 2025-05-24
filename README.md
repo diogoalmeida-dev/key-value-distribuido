@@ -129,7 +129,7 @@ cd key-value-distribuido
   - As escritas são enfileiradas no RabbitMQ e depois processadas assincronamente pelos workers, pelo que diferentes réplicas (CockroachDB, Redis) podem demorar alguns milissegundos a convergir para o mesmo estado.  
   - Este modelo permite alta disponibilidade e throughput, ao preço de aceitar leituras ligeiramente desatualizadas entre o momento do PUT e a propagação completa.
 
-**10. Coordenação**
+**Coordenação**
 - **Timestamps para Ordenação Causal**  
   - Cada comando enfileirado (`publish_cmd`) inclui um campo `ts` com o timestamp UTC em ISO 8601, permitindo comparar a ordem real das escritas.  
   - No Storage Node, o `updated_at` em CockroachDB recebe exatamente este `ts`, garantindo que, mesmo em ambientes distribuídos, sabemos sempre qual foi a operação mais recente.  
@@ -145,7 +145,7 @@ cd key-value-distribuido
 * **Standalone**: basta o `start.sh` em máquina GNU/Linux com Docker.
 * **Cloud**: Cloud não suportada.
 
-## Bibliografia
+## 8. Bibliografia
 
 1. **van Steen, M. & Tanenbaum, A. S.** (2023; updated Jan. 2025). *Distributed Systems* (4ª ed., v. 4.03). distributed-systems.net. Disponível em: https://distributed-systems.net/index.php/books/ds4/  
 
