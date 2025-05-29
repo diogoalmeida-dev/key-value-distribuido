@@ -40,7 +40,8 @@ services:
         exec redis-server /etc/redis/sentinel.conf --sentinel
       '
     volumes:
-      - ./sentinel/sentinel.conf:/etc/redis/sentinel.conf
+      - ./sentinel/sentinel.conf:/etc/redis/sentinel.conf:rw
+
     networks: [backend]
     restart: always
 
